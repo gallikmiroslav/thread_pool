@@ -28,6 +28,8 @@
 #include <assert.h>
 #include "thread_pool.h"
 
+typedef struct thread_pool_s thread_pool_t;
+
 typedef struct
 {
     tp_func_t func;
@@ -36,11 +38,19 @@ typedef struct
 
 typedef struct
 {
+    thread_pool_t *thread_pool;
+    pthread_t thr;
+    int tid;
+    void *user_data;
+} tp_thread_t;
+
+struct thread_pool_s
+{
     // Constants
     size_t pool_size;
     size_t queue_size;
 
-    pthread_t *thr_pool;
+    tp_thread_t *thr_pool;
 
     // Protected by queue_rd_mtx
     size_t queue_rd_pos;
@@ -56,12 +66,12 @@ typedef struct
 
     // Access synchronized through sem_queue and sem_queue_free
     tp_task_t *queue;
-
-} thread_pool_t;
+};
 
 void *worker_thread(void *arg)
 {
-    thread_pool_t *tp = (thread_pool_t *) arg;
+    tp_thread_t *thr = (tp_thread_t *) arg;
+    thread_pool_t *tp = thr->thread_pool;
     tp_task_t *task;
     tp_func_t t_func;
     void *t_arg;
@@ -89,7 +99,7 @@ void *worker_thread(void *arg)
             break;
 
         // execute task
-        t_func(t_arg);
+        t_func(t_arg, thr->tid, thr->user_data);
     }
     return NULL;
 }
@@ -104,13 +114,13 @@ tp_init(size_t pool_size, size_t queue_size)
     assert(queue_size > 0);
 
     thread_pool_t *tp = (thread_pool_t *) malloc(sizeof(thread_pool_t)
-                                                 + pool_size * sizeof(pthread_t)
+                                                 + pool_size * sizeof(tp_thread_t)
                                                  + queue_size * sizeof(tp_task_t));
 
     if (tp)
     {
         tp->pool_size = pool_size;
-        tp->thr_pool = (pthread_t *) (tp + 1);
+        tp->thr_pool = (tp_thread_t *) (tp + 1);
         tp->queue_size = queue_size;
         tp->queue = (tp_task_t *) (tp->thr_pool + pool_size);
 
@@ -127,7 +137,13 @@ tp_init(size_t pool_size, size_t queue_size)
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
         for (int i = 0; i < pool_size; i++)
-            pthread_create(tp->thr_pool + i, &attr, worker_thread, tp);
+        {
+            tp_thread_t *t = tp->thr_pool + i;
+            t->thread_pool = tp;
+            t->tid = i;
+            t->user_data = NULL;
+            pthread_create(&t->thr, &attr, worker_thread, t);
+        }
 
         pthread_attr_destroy(&attr);
     }
@@ -174,7 +190,7 @@ tp_done(void *thread_pool)
     for (int i = 0; i < tp->pool_size; i++)
         tp_add_task(tp, NULL, NULL, 0);
     for (int i = 0; i < tp->pool_size; i++)
-        pthread_join(*(tp->thr_pool + i), &ret);
+        pthread_join((tp->thr_pool + i)->thr, &ret);
 
     pthread_mutex_destroy(&tp->queue_rd_mtx);
     pthread_mutex_destroy(&tp->queue_wr_mtx);

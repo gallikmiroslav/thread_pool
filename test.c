@@ -35,12 +35,11 @@
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 
 void
-task_proc(void *arg)
+task_proc(void *arg, int tid, void *user_data)
 {
-    //pthread_t tid = pthread_self();
-    pid_t tid = gettid();
+    (void)user_data;    // suppress unused parameter warning
 
-    printf("%d TID: %lu\n", (int)arg, (unsigned long)tid);
+    printf("%d TID: %d   gettid():%lu \n", (int)arg, tid, (unsigned long)gettid());
     sleep(1);
 }
 

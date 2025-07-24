@@ -25,7 +25,11 @@
 #ifndef THREAD_POOL_THREAD_POOL_H
 #define THREAD_POOL_THREAD_POOL_H
 
-typedef void (*tp_func_t)(void *arg);
+/// Function pointer type for thread pool tasks
+/// \param arg Generic argument pointer passed to the function
+/// \param tid Thread ID of the worker thread executing the task
+/// \param user_data Per thread User-specific data pointer that can be used for additional context
+typedef void (*tp_func_t)(void *arg, int tid, void *user_data);
 
 /// Initialize new thread pool
 /// \param pool_size size of thread pool
